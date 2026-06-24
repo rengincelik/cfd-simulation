@@ -1,3 +1,4 @@
+
 # CLion ve CMake çıktıları
 cmake-build-debug/
 cmake-build-release/
@@ -11,3 +12,6 @@ cmake-build-release/
 *.out
 *.o
 *.objcfd-proje-notlari.md
+
+# Local project notes
+cfd-proje-notlari.md
