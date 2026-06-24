@@ -1,0 +1,13 @@
+# CLion ve CMake çıktıları
+cmake-build-debug/
+cmake-build-release/
+.cmake/
+
+# JetBrains IDE ayarları
+.idea/
+
+# Devasa binary ve derleme dosyaları
+*.exe
+*.out
+*.o
+*.obj
