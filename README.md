@@ -136,3 +136,24 @@ The solver is validated against the canonical Ghia et al. (1982) benchmark for l
 
 - Ghia, U., Ghia, K. N., & Shin, C. T. (1982). *High-Re solutions for incompressible flow using the Navier-Stokes equations and a multigrid method.* Journal of Computational Physics, 48(3), 387–411.
 - Chorin, A. J. (1968). *Numerical solution of the Navier-Stokes equations.* Mathematics of Computation, 22(104), 745–762.
+
+---
+
+## Browser Build (WebAssembly)
+
+The lid-driven cavity also runs in the browser. The same C++ solver, Ghia validation and colormaps are compiled with [Emscripten](https://emscripten.org); `docs/` holds the page and is what GitHub Pages serves.
+
+```
+web/cavity_wasm.cpp   ← thin C API over the solver headers (the solver itself is unchanged)
+docs/index.html       ← page: canvas, controls, readouts
+docs/app.js           ← drives the module and draws the fields
+docs/cavity.js/.wasm  ← build output (emcmake, below)
+```
+
+```bash
+emcmake cmake -B build-wasm -DCMAKE_BUILD_TYPE=Release
+cmake --build build-wasm
+python3 -m http.server -d docs      # then open http://localhost:8000
+```
+
+The browser build needs no SDL2 and no `.cfg` file: Re and grid size are chosen on the page and passed to the solver as a config string.

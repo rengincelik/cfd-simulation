@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lid-driven cavity — C++ CFD in the browser</title>
+  <meta name="description" content="2D incompressible Navier–Stokes solver (C++17, Chorin projection) compiled to WebAssembly and validated against Ghia et al. (1982).">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <main class="app">
+    <section class="stage" aria-label="Flow field">
+      <canvas id="view" role="img" aria-label="Lid-driven cavity flow field"></canvas>
+      <p id="banner" class="banner" role="status" hidden></p>
+    </section>
+
+    <aside class="panel" aria-label="Controls">
+      <header>
+        <h1>Lid-driven cavity</h1>
+        <p class="sub">C++ solver · WebAssembly</p>
+      </header>
+
+      <div class="row">
+        <button id="run" type="button" class="primary">Pause</button>
+        <button id="reset" type="button">Reset</button>
+      </div>
+
+      <div class="group" role="group" aria-label="Field shown">
+        <button type="button" data-view="0" aria-pressed="true">Velocity</button>
+        <button type="button" data-view="1" aria-pressed="false">Temp.</button>
+        <button type="button" data-view="2" aria-pressed="false">Pressure</button>
+      </div>
+
+      <div class="selects">
+        <label>Re
+          <select id="re">
+            <option value="100">100</option>
+            <option value="400" selected>400</option>
+            <option value="1000">1000</option>
+          </select>
+        </label>
+        <label>Grid
+          <select id="grid">
+            <option value="32">32²</option>
+            <option value="64" selected>64²</option>
+            <option value="128">128²</option>
+          </select>
+        </label>
+        <label>Speed
+          <select id="speed">
+            <option value="max" selected>Max</option>
+            <option value="normal">5 / frame</option>
+            <option value="slow">1 / frame</option>
+          </select>
+        </label>
+      </div>
+
+      <dl class="readout" aria-live="off">
+        <div><dt>Step</dt><dd id="o-step">0</dd></div>
+        <div><dt>Time</dt><dd id="o-time">0.000</dd></div>
+        <div><dt>max |u|</dt><dd id="o-vmax">—</dd></div>
+        <div><dt>max Δu</dt><dd id="o-dmax">—</dd></div>
+        <div><dt>p range</dt><dd id="o-p">—</dd></div>
+      </dl>
+
+      <section class="ghia">
+        <h2 id="ghia-title">vs. Ghia et al. (1982)</h2>
+        <dl class="readout">
+          <div><dt>u  L2 / L∞</dt><dd id="g-u">—</dd></div>
+          <div><dt>v  L2 / L∞</dt><dd id="g-v">—</dd></div>
+        </dl>
+      </section>
+
+      <button id="csv" type="button">Export CSV</button>
+      <p class="keys">Space pause · R reset · 1 2 3 view</p>
+    </aside>
+  </main>
+</body>
+</html>

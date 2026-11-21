@@ -15,3 +15,5 @@ cmake-build-release/
 
 # Local project notes
 cfd-proje-notlari.md
+# Emscripten build directory
+build-wasm/

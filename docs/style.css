@@ -1,0 +1,111 @@
+:root {
+  --bg: #17181b;
+  --panel: #1d1f23;
+  --fg: #e9e9e7;
+  --muted: #9a9ca3;
+  --line: #34373d;
+  --accent: #f5683d;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); }
+body { font: 12px/1.4 var(--sans); }
+
+/* Wide frame: canvas left, controls right. The canvas is the largest square
+   that fits its cell, so the layout follows whatever size the iframe has. */
+.app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(12rem, 15rem);
+  gap: 10px;
+  height: 100dvh;
+  padding: 8px;
+}
+
+.stage {
+  position: relative;
+  container-type: size;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+
+#view {
+  display: block;
+  width: min(100cqw, 100cqh);
+  aspect-ratio: 1;
+  background: #000;
+  border: 1px solid var(--line);
+  image-rendering: pixelated;
+}
+
+.banner {
+  position: absolute;
+  inset: auto 0 0 0;
+  margin: 0;
+  padding: 8px 10px;
+  background: rgba(23, 24, 27, 0.92);
+  border-top: 1px solid var(--accent);
+  color: var(--fg);
+}
+
+.panel {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+h1 { margin: 0; font-size: 14px; font-weight: 600; }
+h2 { margin: 0 0 4px; font-size: 11px; font-weight: 500; color: var(--muted); }
+.sub { margin: 0; color: var(--muted); }
+
+button, select {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  min-height: 28px;
+  padding: 0 8px;
+}
+
+button { cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+
+.row { display: flex; gap: 6px; }
+.row button { flex: 1; }
+
+.group { display: flex; }
+.group button { flex: 1; padding: 0 4px; margin-left: -1px; }
+.group button:first-child { margin-left: 0; }
+.group button[aria-pressed='true'] { background: var(--fg); color: var(--bg); border-color: var(--fg); position: relative; }
+
+.selects { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.selects label { display: grid; gap: 2px; color: var(--muted); font-size: 11px; }
+.selects select { width: 100%; padding: 0 2px; }
+
+.readout { margin: 0; display: grid; gap: 2px; font-family: var(--mono); font-size: 11px; }
+.readout div { display: flex; justify-content: space-between; gap: 8px; }
+.readout dt { color: var(--muted); }
+.readout dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+
+.ghia { padding-top: 8px; border-top: 1px solid var(--line); }
+
+.keys { margin: auto 0 0; color: var(--muted); font-size: 11px; }
+
+/* Narrow or portrait frame: stack, canvas on top, page scrolls. */
+@media (max-aspect-ratio: 5/4), (max-width: 520px) {
+  .app { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 100dvh; }
+  .stage { aspect-ratio: 1; }
+  .panel { overflow: visible; }
+}
