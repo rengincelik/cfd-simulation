@@ -1,0 +1,835 @@
+From 20c7ea0bed161e8a02628871a3d9b8f7b07ba174 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 21 Nov 2026 15:57:47 +0300
+Subject: [PATCH] feat(web): run the cavity solver in the browser via
+ WebAssembly
+
+- web/cavity_wasm.cpp: C API over the existing solver (init/step/fields,
+  RGBA render with the SDL colormaps, stats, Ghia comparison); solver code unchanged
+- CMakeLists.txt: EMSCRIPTEN branch builds docs/cavity.{js,wasm}; native SDL2 targets unchanged
+- docs/: responsive page (canvas, view/Re/grid/speed controls, live Ghia error, CSV export)
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_016KqqZgCmMWbBVofr282ktp
+---
+ .gitignore          |   4 +-
+ CMakeLists.txt      |  32 ++++-
+ README.md           |  21 ++++
+ docs/app.js         | 288 ++++++++++++++++++++++++++++++++++++++++++++
+ docs/index.html     |  80 ++++++++++++
+ docs/style.css      | 111 +++++++++++++++++
+ web/cavity_wasm.cpp | 206 +++++++++++++++++++++++++++++++
+ 7 files changed, 737 insertions(+), 5 deletions(-)
+ create mode 100644 docs/app.js
+ create mode 100644 docs/index.html
+ create mode 100644 docs/style.css
+ create mode 100644 web/cavity_wasm.cpp
+
+diff --git a/.gitignore b/.gitignore
+index 1c91194..e9f63b0 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -14,4 +14,6 @@ cmake-build-release/
+ *.objcfd-proje-notlari.md
+ 
+ # Local project notes
+-cfd-proje-notlari.md
+\ No newline at end of file
++cfd-proje-notlari.md
++# Emscripten build directory
++build-wasm/
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 6043f8b..eeb73c7 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -4,17 +4,40 @@ project(cfd CXX)
+ set(CMAKE_CXX_STANDARD 17)
+ set(CMAKE_CXX_STANDARD_REQUIRED ON)
+ 
+-# ── SDL2 ─────────────────────────────────────────────────────────────────────
+-find_package(SDL2 REQUIRED)
+-
+ # ── Include paths ─────────────────────────────────────────────────────────────
+ include_directories(
+     ${CMAKE_SOURCE_DIR}
+     ${CMAKE_SOURCE_DIR}/include
+     ${CMAKE_SOURCE_DIR}/src
+-    ${SDL2_INCLUDE_DIRS}
+ )
+ 
++# ── Browser build (Emscripten) ────────────────────────────────────────────────
++#   emcmake cmake -B build-wasm -DCMAKE_BUILD_TYPE=Release
++#   cmake --build build-wasm
++# Writes docs/cavity.js + docs/cavity.wasm, next to docs/index.html (GitHub Pages).
++# The page only needs the solver, so none of the SDL2 apps are built here.
++if(EMSCRIPTEN)
++    add_executable(cavity_wasm web/cavity_wasm.cpp)
++    set_target_properties(cavity_wasm PROPERTIES
++        OUTPUT_NAME cavity
++        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/docs)
++    target_compile_options(cavity_wasm PRIVATE -O3 -fexceptions -Wall -Wextra)
++    target_link_options(cavity_wasm PRIVATE
++        -fexceptions
++        -sMODULARIZE=1
++        -sEXPORT_ES6=1
++        -sEXPORT_NAME=createCfdModule
++        -sENVIRONMENT=web
++        -sALLOW_MEMORY_GROWTH=1
++        -sEXPORTED_FUNCTIONS=_cfd_init,_cfd_reset,_cfd_step,_cfd_nx,_cfd_ny,_cfd_lx,_cfd_ly,_cfd_field,_cfd_render_rgba,_cfd_stats,_cfd_ghia
++        -sEXPORTED_RUNTIME_METHODS=cwrap,HEAPU8,HEAPF64)
++    return()
++endif()
++
++# ── SDL2 (native apps) ────────────────────────────────────────────────────────
++find_package(SDL2 REQUIRED)
++include_directories(${SDL2_INCLUDE_DIRS})
++
+ # ── Helper macro ──────────────────────────────────────────────────────────────
+ macro(cfd_app target source)
+     add_executable(${target} ${source})
+@@ -35,3 +58,4 @@ foreach(cfg cavity heat2d heat2d_disk heat2d_obstacle)
+     configure_file(${CMAKE_SOURCE_DIR}/${cfg}.cfg
+                    ${CMAKE_BINARY_DIR}/${cfg}.cfg COPYONLY)
+ endforeach()
++# ─────────────────────────────────────────────────────────────────────────────
+diff --git a/README.md b/README.md
+index 9a666ea..24c13b6 100644
+--- a/README.md
++++ b/README.md
+@@ -136,3 +136,24 @@ The solver is validated against the canonical Ghia et al. (1982) benchmark for l
+ 
+ - Ghia, U., Ghia, K. N., & Shin, C. T. (1982). *High-Re solutions for incompressible flow using the Navier-Stokes equations and a multigrid method.* Journal of Computational Physics, 48(3), 387–411.
+ - Chorin, A. J. (1968). *Numerical solution of the Navier-Stokes equations.* Mathematics of Computation, 22(104), 745–762.
++
++---
++
++## Browser Build (WebAssembly)
++
++The lid-driven cavity also runs in the browser. The same C++ solver, Ghia validation and colormaps are compiled with [Emscripten](https://emscripten.org); `docs/` holds the page and is what GitHub Pages serves.
++
++```
++web/cavity_wasm.cpp   ← thin C API over the solver headers (the solver itself is unchanged)
++docs/index.html       ← page: canvas, controls, readouts
++docs/app.js           ← drives the module and draws the fields
++docs/cavity.js/.wasm  ← build output (emcmake, below)
++```
++
++```bash
++emcmake cmake -B build-wasm -DCMAKE_BUILD_TYPE=Release
++cmake --build build-wasm
++python3 -m http.server -d docs      # then open http://localhost:8000
++```
++
++The browser build needs no SDL2 and no `.cfg` file: Re and grid size are chosen on the page and passed to the solver as a config string.
+diff --git a/docs/app.js b/docs/app.js
+new file mode 100644
+index 0000000..c129c6a
+--- /dev/null
++++ b/docs/app.js
+@@ -0,0 +1,288 @@
++// Lid-driven cavity: browser front end for the C++ solver (cavity.wasm).
++// The solver, the Ghia comparison and the colormaps run in C++ (web/cavity_wasm.cpp);
++// this file only drives it and draws the result.
++
++const $ = (id) => document.getElementById(id);
++
++const canvas = $('view');
++const ctx = canvas.getContext('2d');
++const banner = $('banner');
++const runBtn = $('run');
++const viewBtns = [...document.querySelectorAll('[data-view]')];
++
++const FRAME_BUDGET_MS = 12;                       // time spent stepping per animation frame
++const SPEEDS = { max: Infinity, normal: 5, slow: 1 };
++
++let M;                // Emscripten module
++let api;              // wrapped C functions
++let nx = 0;
++let ny = 0;
++let off;              // nx x ny offscreen canvas holding the coloured field
++let img;              // its ImageData
++let view = 0;         // 0 velocity, 1 temperature, 2 pressure
++let running = true;
++let diverged = false;
++let dirty = true;
++let lastReadout = 0;
++
++// Same defaults as cavity.cfg; the page overrides Re and grid.
++const cfgText = () =>
++  [
++    `nx ${$('grid').value}`,
++    `ny ${$('grid').value}`,
++    'lx 1.0',
++    'ly 1.0',
++    `reynolds ${$('re').value}`,
++    'lid_vel 1.0',
++    'prandtl 0.71',
++    'dt 0.001',
++    'p_iter 50',
++  ].join('\n');
++
++const f64 = (ptr, n) => new Float64Array(M.HEAPF64.buffer, ptr, n);
++
++function say(message) {
++  banner.hidden = !message;
++  banner.textContent = message ?? '';
++}
++
++// ── simulation control ───────────────────────────────────────────────────────
++
++function start() {
++  diverged = false;
++  say(null);
++  if (!api.init(cfgText())) {
++    running = false;
++    say('The solver rejected this configuration.');
++    syncRunButton();
++    return;
++  }
++  nx = api.nx();
++  ny = api.ny();
++  off = document.createElement('canvas');
++  off.width = nx;
++  off.height = ny;
++  img = new ImageData(nx, ny);
++  dirty = true;
++  readout(true);
++}
++
++function reset() {
++  if (!api.reset()) {
++    start();
++    return;
++  }
++  diverged = false;
++  say(null);
++  dirty = true;
++  readout(true);
++}
++
++function setRunning(value) {
++  running = value && !diverged;
++  syncRunButton();
++}
++
++function syncRunButton() {
++  runBtn.textContent = running ? 'Pause' : 'Run';
++}
++
++function setView(next) {
++  view = next;
++  viewBtns.forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.view) === view)));
++  dirty = true;
++}
++
++function advance() {
++  const cap = SPEEDS[$('speed').value];
++  const t0 = performance.now();
++  let n = 0;
++  while (n < cap) {
++    api.step(1);
++    n += 1;
++    if (performance.now() - t0 > FRAME_BUDGET_MS) break;
++  }
++}
++
++// ── drawing ──────────────────────────────────────────────────────────────────
++
++function fitCanvas() {
++  const rect = canvas.getBoundingClientRect();
++  const size = Math.max(1, Math.round(rect.width * (window.devicePixelRatio || 1)));
++  if (canvas.width !== size) {
++    canvas.width = size;
++    canvas.height = size;
++    dirty = true;
++  }
++}
++
++function draw() {
++  if (!nx) return;
++  const ptr = api.render(view);
++  img.data.set(new Uint8ClampedArray(M.HEAPU8.buffer, ptr, nx * ny * 4));
++  off.getContext('2d').putImageData(img, 0, 0);
++
++  const size = canvas.width;
++  ctx.imageSmoothingEnabled = false;
++  ctx.drawImage(off, 0, 0, size, size);
++
++  if (view === 0) drawArrows(size);
++}
++
++// Velocity arrows, laid out like the SDL version (every `step` cells).
++function drawArrows(size) {
++  const step = Math.max(2, Math.round(nx / 16));
++  const u = f64(api.field(0), nx * ny);
++  const v = f64(api.field(1), nx * ny);
++  const vmax = Math.max(f64(api.stats(), 8)[3], 1e-9);
++  const cell = size / nx;
++  const scale = (cell * step * 0.4) / vmax;
++
++  ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
++  ctx.lineWidth = Math.max(1, size / 480);
++  ctx.beginPath();
++  for (let j = Math.floor(step / 2); j < ny; j += step) {
++    for (let i = Math.floor(step / 2); i < nx; i += step) {
++      const k = j * nx + i;
++      if (Math.hypot(u[k], v[k]) < 1e-6) continue;
++      const cx = (i + 0.5) * cell;
++      const cy = (ny - 1 - j + 0.5) * cell;
++      ctx.moveTo(cx, cy);
++      ctx.lineTo(cx + u[k] * scale, cy - v[k] * scale);
++    }
++  }
++  ctx.stroke();
++}
++
++// ── numbers ──────────────────────────────────────────────────────────────────
++
++const num = (x, digits) => (Number.isFinite(x) ? x.toFixed(digits) : '—');
++
++function readout(force = false) {
++  const now = performance.now();
++  if (!force && now - lastReadout < 100) return;
++  lastReadout = now;
++
++  const s = f64(api.stats(), 8);
++  $('o-step').textContent = String(s[0]);
++  $('o-time').textContent = num(s[1], 3);
++  $('o-vmax').textContent = num(s[3], 3);
++  $('o-dmax').textContent = Number.isFinite(s[2]) ? s[2].toExponential(2) : '—';
++  $('o-p').textContent = `${num(s[4], 2)} … ${num(s[5], 2)}`;
++
++  const g = f64(api.ghia(), 5);
++  $('ghia-title').textContent = `vs. Ghia et al. (1982), Re ${s[6]}`;
++  $('g-u').textContent = g[0] ? `${num(g[1], 4)} / ${num(g[3], 4)}` : 'no reference';
++  $('g-v').textContent = g[0] ? `${num(g[2], 4)} / ${num(g[4], 4)}` : 'no reference';
++
++  if (!s[7] && !diverged) {
++    diverged = true;
++    running = false;
++    syncRunButton();
++    say('The solution diverged (non-finite values). Press Reset, or lower Re / grid size.');
++  }
++}
++
++// ── CSV ──────────────────────────────────────────────────────────────────────
++
++function exportCsv() {
++  if (!nx) return;
++  const n = nx * ny;
++  const [u, v, p, t] = [0, 1, 2, 3].map((w) => f64(api.field(w), n));
++  const dx = api.lx() / (nx - 1);
++  const dy = api.ly() / (ny - 1);
++  const e = (x) => x.toExponential(8);
++
++  const rows = ['i,j,x,y,u,v,p,T'];
++  for (let j = 0; j < ny; j += 1) {
++    for (let i = 0; i < nx; i += 1) {
++      const k = j * nx + i;
++      rows.push([i, j, e(i * dx), e(j * dy), e(u[k]), e(v[k]), e(p[k]), e(t[k])].join(','));
++    }
++  }
++
++  const step = String(f64(api.stats(), 8)[0]).padStart(6, '0');
++  const a = document.createElement('a');
++  a.href = URL.createObjectURL(new Blob([`${rows.join('\n')}\n`], { type: 'text/csv' }));
++  a.download = `cavity_Re${$('re').value}_${nx}x${ny}_step${step}.csv`;
++  document.body.append(a);
++  a.click();
++  a.remove();
++  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
++}
++
++// ── wiring ───────────────────────────────────────────────────────────────────
++
++function frame() {
++  requestAnimationFrame(frame);
++  if (!api) return;
++  if (running && !diverged) {
++    advance();
++    readout();
++    dirty = true;
++  }
++  if (dirty) {
++    dirty = false;
++    draw();
++  }
++}
++
++function bind() {
++  runBtn.addEventListener('click', () => setRunning(!running));
++  $('reset').addEventListener('click', reset);
++  $('csv').addEventListener('click', exportCsv);
++  $('re').addEventListener('change', start);
++  $('grid').addEventListener('change', start);
++  viewBtns.forEach((b) => b.addEventListener('click', () => setView(Number(b.dataset.view))));
++
++  window.addEventListener('keydown', (e) => {
++    if (e.ctrlKey || e.metaKey || e.altKey) return;
++    if (e.target.closest?.('select, input')) return;
++    const key = e.key.toLowerCase();
++    if (key === ' ' && !e.target.closest?.('button')) {
++      e.preventDefault();
++      setRunning(!running);
++    } else if (key === 'r') {
++      reset();
++    } else if (key === '1' || key === '2' || key === '3') {
++      setView(Number(key) - 1);
++    }
++  });
++
++  new ResizeObserver(fitCanvas).observe(canvas);
++  fitCanvas();
++}
++
++async function boot() {
++  bind();
++  say('Loading solver…');
++  try {
++    // Imported here, not at the top, so a missing build shows a message
++    // instead of leaving a silent, dead page.
++    const { default: createCfdModule } = await import('./cavity.js');
++    M = await createCfdModule();
++  } catch (err) {
++    console.error(err);
++    say('Could not load the WebAssembly solver (docs/cavity.js and cavity.wasm built?).');
++    return;
++  }
++  api = {
++    init: M.cwrap('cfd_init', 'number', ['string']),
++    reset: M.cwrap('cfd_reset', 'number', []),
++    step: M.cwrap('cfd_step', 'number', ['number']),
++    nx: M.cwrap('cfd_nx', 'number', []),
++    ny: M.cwrap('cfd_ny', 'number', []),
++    lx: M.cwrap('cfd_lx', 'number', []),
++    ly: M.cwrap('cfd_ly', 'number', []),
++    field: M.cwrap('cfd_field', 'number', ['number']),
++    render: M.cwrap('cfd_render_rgba', 'number', ['number']),
++    // Both return a pointer to a small static table of doubles (read with f64).
++    stats: M.cwrap('cfd_stats', 'number', []),
++    ghia: M.cwrap('cfd_ghia', 'number', []),
++  };
++  start();
++  window.focus();
++}
++
++requestAnimationFrame(frame);
++boot();
+diff --git a/docs/index.html b/docs/index.html
+new file mode 100644
+index 0000000..3ac8a77
+--- /dev/null
++++ b/docs/index.html
+@@ -0,0 +1,80 @@
++<!DOCTYPE html>
++<html lang="en">
++<head>
++  <meta charset="UTF-8">
++  <meta name="viewport" content="width=device-width, initial-scale=1">
++  <title>Lid-driven cavity — C++ CFD in the browser</title>
++  <meta name="description" content="2D incompressible Navier–Stokes solver (C++17, Chorin projection) compiled to WebAssembly and validated against Ghia et al. (1982).">
++  <link rel="stylesheet" href="style.css">
++  <script type="module" src="app.js"></script>
++</head>
++<body>
++  <main class="app">
++    <section class="stage" aria-label="Flow field">
++      <canvas id="view" role="img" aria-label="Lid-driven cavity flow field"></canvas>
++      <p id="banner" class="banner" role="status" hidden></p>
++    </section>
++
++    <aside class="panel" aria-label="Controls">
++      <header>
++        <h1>Lid-driven cavity</h1>
++        <p class="sub">C++ solver · WebAssembly</p>
++      </header>
++
++      <div class="row">
++        <button id="run" type="button" class="primary">Pause</button>
++        <button id="reset" type="button">Reset</button>
++      </div>
++
++      <div class="group" role="group" aria-label="Field shown">
++        <button type="button" data-view="0" aria-pressed="true">Velocity</button>
++        <button type="button" data-view="1" aria-pressed="false">Temp.</button>
++        <button type="button" data-view="2" aria-pressed="false">Pressure</button>
++      </div>
++
++      <div class="selects">
++        <label>Re
++          <select id="re">
++            <option value="100">100</option>
++            <option value="400" selected>400</option>
++            <option value="1000">1000</option>
++          </select>
++        </label>
++        <label>Grid
++          <select id="grid">
++            <option value="32">32²</option>
++            <option value="64" selected>64²</option>
++            <option value="128">128²</option>
++          </select>
++        </label>
++        <label>Speed
++          <select id="speed">
++            <option value="max" selected>Max</option>
++            <option value="normal">5 / frame</option>
++            <option value="slow">1 / frame</option>
++          </select>
++        </label>
++      </div>
++
++      <dl class="readout" aria-live="off">
++        <div><dt>Step</dt><dd id="o-step">0</dd></div>
++        <div><dt>Time</dt><dd id="o-time">0.000</dd></div>
++        <div><dt>max |u|</dt><dd id="o-vmax">—</dd></div>
++        <div><dt>max Δu</dt><dd id="o-dmax">—</dd></div>
++        <div><dt>p range</dt><dd id="o-p">—</dd></div>
++      </dl>
++
++      <section class="ghia">
++        <h2 id="ghia-title">vs. Ghia et al. (1982)</h2>
++        <dl class="readout">
++          <div><dt>u  L2 / L∞</dt><dd id="g-u">—</dd></div>
++          <div><dt>v  L2 / L∞</dt><dd id="g-v">—</dd></div>
++        </dl>
++      </section>
++
++      <button id="csv" type="button">Export CSV</button>
++      <p class="keys">Space pause · R reset · 1 2 3 view</p>
++    </aside>
++  </main>
++</body>
++</html>
+diff --git a/docs/style.css b/docs/style.css
+new file mode 100644
+index 0000000..a508ad8
+--- /dev/null
++++ b/docs/style.css
+@@ -0,0 +1,111 @@
++:root {
++  --bg: #17181b;
++  --panel: #1d1f23;
++  --fg: #e9e9e7;
++  --muted: #9a9ca3;
++  --line: #34373d;
++  --accent: #f5683d;
++  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
++  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
++  color-scheme: dark;
++}
++
++* { box-sizing: border-box; }
++
++html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); }
++body { font: 12px/1.4 var(--sans); }
++
++/* Wide frame: canvas left, controls right. The canvas is the largest square
++   that fits its cell, so the layout follows whatever size the iframe has. */
++.app {
++  display: grid;
++  grid-template-columns: minmax(0, 1fr) minmax(12rem, 15rem);
++  gap: 10px;
++  height: 100dvh;
++  padding: 8px;
++}
++
++.stage {
++  position: relative;
++  container-type: size;
++  min-height: 0;
++  display: grid;
++  place-items: center;
++}
++
++#view {
++  display: block;
++  width: min(100cqw, 100cqh);
++  aspect-ratio: 1;
++  background: #000;
++  border: 1px solid var(--line);
++  image-rendering: pixelated;
++}
++
++.banner {
++  position: absolute;
++  inset: auto 0 0 0;
++  margin: 0;
++  padding: 8px 10px;
++  background: rgba(23, 24, 27, 0.92);
++  border-top: 1px solid var(--accent);
++  color: var(--fg);
++}
++
++.panel {
++  min-height: 0;
++  overflow: auto;
++  display: flex;
++  flex-direction: column;
++  gap: 10px;
++  padding: 10px;
++  background: var(--panel);
++  border: 1px solid var(--line);
++}
++
++h1 { margin: 0; font-size: 14px; font-weight: 600; }
++h2 { margin: 0 0 4px; font-size: 11px; font-weight: 500; color: var(--muted); }
++.sub { margin: 0; color: var(--muted); }
++
++button, select {
++  font: inherit;
++  color: var(--fg);
++  background: var(--bg);
++  border: 1px solid var(--line);
++  border-radius: 0;
++  min-height: 28px;
++  padding: 0 8px;
++}
++
++button { cursor: pointer; }
++button:hover { border-color: var(--muted); }
++button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
++button.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
++
++.row { display: flex; gap: 6px; }
++.row button { flex: 1; }
++
++.group { display: flex; }
++.group button { flex: 1; padding: 0 4px; margin-left: -1px; }
++.group button:first-child { margin-left: 0; }
++.group button[aria-pressed='true'] { background: var(--fg); color: var(--bg); border-color: var(--fg); position: relative; }
++
++.selects { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
++.selects label { display: grid; gap: 2px; color: var(--muted); font-size: 11px; }
++.selects select { width: 100%; padding: 0 2px; }
++
++.readout { margin: 0; display: grid; gap: 2px; font-family: var(--mono); font-size: 11px; }
++.readout div { display: flex; justify-content: space-between; gap: 8px; }
++.readout dt { color: var(--muted); }
++.readout dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
++
++.ghia { padding-top: 8px; border-top: 1px solid var(--line); }
++
++.keys { margin: auto 0 0; color: var(--muted); font-size: 11px; }
++
++/* Narrow or portrait frame: stack, canvas on top, page scrolls. */
++@media (max-aspect-ratio: 5/4), (max-width: 520px) {
++  .app { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 100dvh; }
++  .stage { aspect-ratio: 1; }
++  .panel { overflow: visible; }
++}
+diff --git a/web/cavity_wasm.cpp b/web/cavity_wasm.cpp
+new file mode 100644
+index 0000000..3050b2a
+--- /dev/null
++++ b/web/cavity_wasm.cpp
+@@ -0,0 +1,206 @@
++// ─────────────────────────────────────────────────────────────────────────────
++// cavity_wasm.cpp — browser build of the lid-driven cavity solver
++//
++// A thin C API over the existing solver headers. The solver itself is not
++// modified: this file only creates it, steps it and exposes its fields.
++// The page (docs/app.js) draws the fields and owns every control.
++//
++// Build:   see CMakeLists.txt (emcmake cmake -B build-wasm && cmake --build build-wasm)
++// Output:  docs/cavity.js + docs/cavity.wasm
++//
++// Field layout is the solver's own: flat, row-major, index j*nx + i,
++// row j = 0 at the bottom of the cavity.
++// ─────────────────────────────────────────────────────────────────────────────
++
++#include "../include/Config.hpp"
++#include "../src/engine/NavierStokesSolver.hpp"
++#include "../src/validation/GhiaValidator.hpp"
++#include "../src/viz/Colormap.hpp"
++
++#include <algorithm>
++#include <cmath>
++#include <cstdint>
++#include <memory>
++#include <vector>
++
++#ifdef __EMSCRIPTEN__
++  #include <emscripten/emscripten.h>
++  #define CFD_API extern "C" EMSCRIPTEN_KEEPALIVE
++#else
++  #define CFD_API extern "C"   // native build, used for tests
++#endif
++
++namespace {
++
++constexpr int MIN_N = 8;
++constexpr int MAX_N = 256;
++
++struct State {
++    Config                              cfg;
++    std::unique_ptr<NavierStokesSolver> solver;
++    std::vector<std::uint8_t>           rgba;        // nx*ny*4, row 0 = top of the picture
++    double                              stats[8]  = {0};
++    double                              ghia[5]   = {0};
++    Colormap                            cmap_vel{Colormap::Map::BLUE_RED};
++    Colormap                            cmap_tmp{Colormap::Map::BLUE_RED};
++    Colormap                            cmap_prs{Colormap::Map::DIVERGING};
++};
++
++State g;
++
++bool ready() { return g.solver != nullptr; }
++
++bool build() {
++    try {
++        const int nx = g.cfg.get_int("nx", 64);
++        const int ny = g.cfg.get_int("ny", 64);
++        if (nx < MIN_N || ny < MIN_N || nx > MAX_N || ny > MAX_N) {
++            g.solver.reset();
++            return false;
++        }
++        g.solver = std::make_unique<NavierStokesSolver>(g.cfg);
++        g.rgba.assign(static_cast<std::size_t>(nx) * ny * 4, 0);
++        return true;
++    } catch (...) {
++        g.solver.reset();
++        return false;
++    }
++}
++
++} // namespace
++
++// ── Lifecycle ────────────────────────────────────────────────────────────────
++
++// cfg_text uses the same "key value" format as cavity.cfg.
++// Returns 1 on success, 0 if the text is invalid or the grid is out of range.
++CFD_API int cfd_init(const char* cfg_text) {
++    try {
++        g.cfg = Config::from_string(cfg_text ? cfg_text : "");
++    } catch (...) {
++        g.solver.reset();
++        return 0;
++    }
++    return build() ? 1 : 0;
++}
++
++CFD_API int cfd_reset() { return build() ? 1 : 0; }
++
++// Advance n steps; returns the step count.
++CFD_API int cfd_step(int n) {
++    if (!ready()) return 0;
++    for (int k = 0; k < n; ++k) g.solver->step();
++    return g.solver->step_count();
++}
++
++// ── Grid ─────────────────────────────────────────────────────────────────────
++
++CFD_API int    cfd_nx() { return ready() ? g.solver->grid().nx() : 0; }
++CFD_API int    cfd_ny() { return ready() ? g.solver->grid().ny() : 0; }
++CFD_API double cfd_lx() { return ready() ? g.solver->grid().lx() : 0.0; }
++CFD_API double cfd_ly() { return ready() ? g.solver->grid().ly() : 0.0; }
++
++// ── Fields ───────────────────────────────────────────────────────────────────
++
++// which: 0 = u, 1 = v, 2 = p, 3 = temperature. Pointer to nx*ny doubles,
++// valid until the next cfd_step / cfd_reset / cfd_init.
++CFD_API const double* cfd_field(int which) {
++    if (!ready()) return nullptr;
++    switch (which) {
++        case 0:  return g.solver->field_u().data();
++        case 1:  return g.solver->field_v().data();
++        case 2:  return g.solver->field_p().data();
++        default: return g.solver->field_temp().data();
++    }
++}
++
++// ── Picture ──────────────────────────────────────────────────────────────────
++
++// mode: 0 = velocity magnitude, 1 = temperature, 2 = pressure
++// Same normalisation and colormaps as SDL2Renderer. Returns nx*ny RGBA pixels;
++// row 0 is the top of the cavity (the lid), so it can go straight into ImageData.
++CFD_API const std::uint8_t* cfd_render_rgba(int mode) {
++    if (!ready()) return nullptr;
++    const auto& u = g.solver->field_u();
++    const auto& v = g.solver->field_v();
++    const auto& p = g.solver->field_p();
++    const auto& t = g.solver->field_temp();
++    const int nx = g.solver->grid().nx();
++    const int ny = g.solver->grid().ny();
++
++    double vmax = 1e-9, pmin = 1e9, pmax = -1e9;
++    for (int k = 0; k < nx * ny; ++k) {
++        vmax = std::max(vmax, std::sqrt(u[k] * u[k] + v[k] * v[k]));
++        pmin = std::min(pmin, p[k]);
++        pmax = std::max(pmax, p[k]);
++    }
++
++    for (int j = 0; j < ny; ++j) {
++        for (int i = 0; i < nx; ++i) {
++            const int k = j * nx + i;
++            std::uint32_t argb;
++            if (mode == 0) {
++                argb = g.cmap_vel.argb(std::sqrt(u[k] * u[k] + v[k] * v[k]) / vmax);
++            } else if (mode == 1) {
++                argb = g.cmap_tmp.argb(t[k]);
++            } else {
++                argb = g.cmap_prs.argb(pmax > pmin ? (p[k] - pmin) / (pmax - pmin) : 0.5);
++            }
++            std::uint8_t* px = &g.rgba[(static_cast<std::size_t>(ny - 1 - j) * nx + i) * 4];
++            px[0] = static_cast<std::uint8_t>(argb >> 16);
++            px[1] = static_cast<std::uint8_t>(argb >> 8);
++            px[2] = static_cast<std::uint8_t>(argb);
++            px[3] = 255;
++        }
++    }
++    return g.rgba.data();
++}
++
++// ── Numbers for the readout ──────────────────────────────────────────────────
++
++// [0] step  [1] time  [2] max |Δu| of the last step  [3] max |u|
++// [4] p min [5] p max [6] Reynolds  [7] 1 if every value is finite, else 0
++CFD_API const double* cfd_stats() {
++    if (!ready()) return nullptr;
++    const auto& u = g.solver->field_u();
++    const auto& v = g.solver->field_v();
++    const auto& p = g.solver->field_p();
++    double vmax = 0.0, pmin = 1e300, pmax = -1e300;
++    bool finite = std::isfinite(g.solver->max_change());
++    for (std::size_t k = 0; k < u.size(); ++k) {
++        const double s = std::sqrt(u[k] * u[k] + v[k] * v[k]);
++        if (!std::isfinite(s) || !std::isfinite(p[k])) { finite = false; break; }
++        vmax = std::max(vmax, s);
++        pmin = std::min(pmin, p[k]);
++        pmax = std::max(pmax, p[k]);
++    }
++    g.stats[0] = g.solver->step_count();
++    g.stats[1] = g.solver->sim_time();
++    g.stats[2] = g.solver->max_change();
++    g.stats[3] = finite ? vmax : 0.0;
++    g.stats[4] = finite ? pmin : 0.0;
++    g.stats[5] = finite ? pmax : 0.0;
++    g.stats[6] = g.solver->reynolds();
++    g.stats[7] = finite ? 1.0 : 0.0;
++    return g.stats;
++}
++
++// ── Ghia et al. (1982) comparison ────────────────────────────────────────────
++
++// [0] 1 if reference data exists for this Re (100, 400, 1000), else 0
++// [1] u L2  [2] v L2  [3] u L∞  [4] v L∞
++CFD_API const double* cfd_ghia() {
++    for (double& x : g.ghia) x = 0.0;
++    if (!ready()) return g.ghia;
++    try {
++        GhiaValidator val(static_cast<int>(g.solver->reynolds()));
++        const auto r = val.compare(*g.solver);
++        g.ghia[0] = 1.0;
++        g.ghia[1] = r.u_l2;
++        g.ghia[2] = r.v_l2;
++        g.ghia[3] = r.u_linf;
++        g.ghia[4] = r.v_linf;
++    } catch (...) {
++        g.ghia[0] = 0.0;
++    }
++    return g.ghia;
++}
+-- 
+2.43.0
+
