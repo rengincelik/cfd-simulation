@@ -56,9 +56,15 @@ public:
     }
 
     // Getters with defaults.
-    double      get_double(const std::string& k, double      def = 0.0)   const { return has(k) ? std::stod(data_.at(k))   : def; }
-    int         get_int   (const std::string& k, int         def = 0)     const { return has(k) ? std::stoi(data_.at(k))   : def; }
-    std::string get_string(const std::string& k, std::string def = "")    const { return has(k) ? data_.at(k)              : def; }
+    double      get_double(const std::string& k, double      def = 0.0)   const {
+        return has(k) ? std::stod(data_.at(k))   : def;
+    }
+    int         get_int   (const std::string& k, int         def = 0)     const {
+        return has(k) ? std::stoi(data_.at(k))   : def;
+    }
+    std::string get_string(const std::string& k, std::string def = "")    const {
+        return has(k) ? data_.at(k)              : def;
+    }
     bool        get_bool  (const std::string& k, bool        def = false) const {
         if (!has(k)) return def;
         const auto& v = data_.at(k);

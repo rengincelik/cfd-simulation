@@ -10,6 +10,7 @@
 
 class IPDESolver {
 public:
+    //PDE=parial differential equation
     virtual ~IPDESolver() = default;
 
     // Advance solution by one time step dt.

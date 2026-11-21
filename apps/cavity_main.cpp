@@ -32,6 +32,7 @@
 
 
 int main(int argc, char* argv[]) {
+    // Use command-line argument for config path if provided; otherwise, use default.
     const char* cfg_path = (argc > 1) ? argv[1] : "cavity.cfg";
     Config cfg = Config::from_file(cfg_path);
 
